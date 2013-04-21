@@ -12,43 +12,43 @@ MRuby::Build.new do |conf|
   # conf.gem :git => 'git@github.com:masuidrive/mrbgems-example.git', :branch => 'master', :options => '-v'
 
   # Use standard Kernel#sprintf method
-  conf.gem "#{root}/mrbgems/mruby-sprintf"
+#  conf.gem "#{root}/mrbgems/mruby-sprintf"
 
   # Use standard print/puts/p
   conf.gem "#{root}/mrbgems/mruby-print"
 
   # Use standard Math module
-  conf.gem "#{root}/mrbgems/mruby-math"
+#  conf.gem "#{root}/mrbgems/mruby-math"
 
   # Use standard Time class
-  conf.gem "#{root}/mrbgems/mruby-time"
+#  conf.gem "#{root}/mrbgems/mruby-time"
 
   # Use standard Struct class
-  conf.gem "#{root}/mrbgems/mruby-struct"
+#  conf.gem "#{root}/mrbgems/mruby-struct"
 
   # Use extensional Enumerable module
-  conf.gem "#{root}/mrbgems/mruby-enum-ext"
+#  conf.gem "#{root}/mrbgems/mruby-enum-ext"
 
   # Use extensional String class
-  conf.gem "#{root}/mrbgems/mruby-string-ext"
+#  conf.gem "#{root}/mrbgems/mruby-string-ext"
 
   # Use extensional Numeric class
-  conf.gem "#{root}/mrbgems/mruby-numeric-ext"
+#  conf.gem "#{root}/mrbgems/mruby-numeric-ext"
 
   # Use extensional Array class
-  conf.gem "#{root}/mrbgems/mruby-array-ext"
+#  conf.gem "#{root}/mrbgems/mruby-array-ext"
 
   # Use extensional Hash class
-  conf.gem "#{root}/mrbgems/mruby-hash-ext"
+#  conf.gem "#{root}/mrbgems/mruby-hash-ext"
 
   # Use extensional Range class
-  conf.gem "#{root}/mrbgems/mruby-range-ext"
+#  conf.gem "#{root}/mrbgems/mruby-range-ext"
 
   # Use extensional Proc class
-  conf.gem "#{root}/mrbgems/mruby-proc-ext"
+#  conf.gem "#{root}/mrbgems/mruby-proc-ext"
 
   # Use Random class
-  conf.gem "#{root}/mrbgems/mruby-random"
+#  conf.gem "#{root}/mrbgems/mruby-random"
 
   # No use eval method
   # conf.gem "#{root}/mrbgems/mruby-eval"
@@ -58,10 +58,10 @@ MRuby::Build.new do |conf|
   # conf.bins = %w(mrbc)
 
   # Generate mirb command
-  conf.gem "#{root}/mrbgems/mruby-bin-mirb"
+#  conf.gem "#{root}/mrbgems/mruby-bin-mirb"
 
   # Generate mruby command
-  conf.gem "#{root}/mrbgems/mruby-bin-mruby"
+#  conf.gem "#{root}/mrbgems/mruby-bin-mruby"
 
 
   # C compiler settings
@@ -131,3 +131,43 @@ end
 #   conf.test_runner.command = 'env'
 #
 # end
+
+MRuby::CrossBuild.new('STM32F4') do |conf|
+
+  # Use led class
+  conf.gem 'mrbgems/mruby-led'
+
+
+STM32_PROJ_PATH = '/Users/yuri/stm32f4/workspace/ws1/STM32F4-Discovery'
+STM32_LIB_PATH = "#{STM32_PROJ_PATH}/Libraries"
+STM32_UTIL_PATH = "#{STM32_PROJ_PATH}/Utilities"
+
+CFLAGS	= "-mthumb -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -D__FPU_USED=1 -g -Os -gdwarf-2 -Wall -Wstrict-prototypes -fverbose-asm -ffunction-sections -fdata-sections -DRUN_FROM_FLASH=1"
+
+  conf.cc do |cc|
+    cc.command='/Users/yuri/yagarto/yagarto-4.6.2/bin/arm-none-eabi-gcc'
+    cc.include_paths = ["#{STM32_PROJ_PATH}/inc/",
+                        "#{STM32_PROJ_PATH}/cmsis/device/",
+                        "#{STM32_PROJ_PATH}/cmsis/core/",
+                        "#{STM32_LIB_PATH}/STM32F4xx_StdPeriph_Driver/inc/",
+                        "#{STM32_LIB_PATH}/STM32_USB_Device_Library/Class/hid/inc/",
+                        "#{STM32_LIB_PATH}/STM32_USB_Device_Library/Core/inc/",
+                        "#{STM32_LIB_PATH}/STM32_USB_OTG_Driver/inc/",
+                        "#{STM32_UTIL_PATH}/STM32F4-Discovery/",
+                        "#{MRUBY_ROOT}/mrbgems/mruby-led/src/",
+                        "#{MRUBY_ROOT}/include/"]
+
+    cc.flags << "#{CFLAGS}"
+    cc.compile_options = '%{flags} -MMD -o %{outfile} -c %{infile}'
+#    cc.compile_options = '%{flags} -MD -MP -MF -o %{outfile} -c %{infile}'
+#	$(CC) $(CFLAGS) $^ -o $@
+  end
+
+  conf.archiver do |archiver|
+    archiver.command = '/Users/yuri/yagarto/yagarto-4.6.2/bin/arm-none-eabi-ar'
+    archiver.archive_options = 'rcs %{outfile} %{objs}'
+  end
+
+  # No binaries necessary
+  conf.bins = []
+end
