@@ -17,12 +17,21 @@
 #include "mruby.h"
 #include "mruby/array.h"
 #include "mruby/class.h"
-#include "mruby/numeric.h"
 #include "mruby/range.h"
 #include "mruby/string.h"
 #include "re.h"
 
 const char mrb_digitmap[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+
+typedef struct mrb_shared_string {
+  mrb_bool nofree;
+  int refcnt;
+  char *ptr;
+  mrb_int len;
+} mrb_shared_string;
+
+#define MRB_STR_SHARED    1
+#define MRB_STR_NOFREE    2
 
 static mrb_value str_replace(mrb_state *mrb, struct RString *s1, struct RString *s2);
 static mrb_value mrb_str_subseq(mrb_state *mrb, mrb_value str, mrb_int beg, mrb_int len);
@@ -32,12 +41,14 @@ static mrb_value mrb_str_subseq(mrb_state *mrb, mrb_value str, mrb_int beg, mrb_
       s->aux.capa = capacity;\
 } while(0)
 
-void
-mrb_str_decref(mrb_state *mrb, mrb_shared_string *shared)
+static void
+str_decref(mrb_state *mrb, mrb_shared_string *shared)
 {
   shared->refcnt--;
   if (shared->refcnt == 0) {
-    mrb_free(mrb, shared->ptr);
+    if (!shared->nofree) {
+      mrb_free(mrb, shared->ptr);
+    }
     mrb_free(mrb, shared);
   }
 }
@@ -66,9 +77,21 @@ mrb_str_modify(mrb_state *mrb, struct RString *s)
       ptr[len] = 0;
       s->ptr = ptr;
       s->aux.capa = len;
-      mrb_str_decref(mrb, shared);
+      str_decref(mrb, shared);
     }
     s->flags &= ~MRB_STR_SHARED;
+    return;
+  }
+  if (s->flags & MRB_STR_NOFREE) {
+    char *p = s->ptr;
+
+    s->ptr = (char *)mrb_malloc(mrb, (size_t)s->len+1);
+    if (p) {
+      memcpy(s->ptr, p, s->len);
+    }
+    s->ptr[s->len] = '\0';
+    s->aux.capa = s->len;
+    return;
   }
 }
 
@@ -81,10 +104,9 @@ mrb_str_resize(mrb_state *mrb, mrb_value str, mrb_int len)
   mrb_str_modify(mrb, s);
   slen = s->len;
   if (len != slen) {
-    if (slen < len || slen -len > 1024) {
-      s->ptr = (char *)mrb_realloc(mrb, s->ptr, len+1);
+    if (slen < len || slen - len > 256) {
+      RESIZE_CAPA(s, len);
     }
-    s->aux.capa = len;
     s->len = len;
     s->ptr[len] = '\0';   /* sentinel */
   }
@@ -238,16 +260,31 @@ mrb_str_new_cstr(mrb_state *mrb, const char *p)
     len = 0;
   }
 
-  s = mrb_obj_alloc_string(mrb);
-  s->ptr = (char *)mrb_malloc(mrb, len+1);
-  if (p) {
-    memcpy(s->ptr, p, len);
-  }
-  s->ptr[len] = 0;
-  s->len = (mrb_int)len;
-  s->aux.capa = (mrb_int)len;
+  s = str_new(mrb, p, len);
 
   return mrb_obj_value(s);
+}
+
+mrb_value
+mrb_str_new_static(mrb_state *mrb, const char *p, size_t len)
+{
+  struct RString *s;
+
+  s = mrb_obj_alloc_string(mrb);
+  s->len = len;
+  s->aux.capa = 0;             /* nofree */
+  s->ptr = (char *)p;
+  s->flags = MRB_STR_NOFREE;
+  return mrb_obj_value(s);
+}
+
+void
+mrb_gc_free_str(mrb_state *mrb, struct RString *str)
+{
+  if (str->flags & MRB_STR_SHARED)
+    str_decref(mrb, str->aux.shared);
+  else if ((str->flags & MRB_STR_NOFREE) == 0)
+    mrb_free(mrb, str->ptr);
 }
 
 char *
@@ -273,11 +310,19 @@ str_make_shared(mrb_state *mrb, struct RString *s)
     mrb_shared_string *shared = (mrb_shared_string *)mrb_malloc(mrb, sizeof(mrb_shared_string));
 
     shared->refcnt = 1;
-    if (s->aux.capa > s->len) {
-      s->ptr = shared->ptr = (char *)mrb_realloc(mrb, s->ptr, s->len+1);
+    if (s->flags & MRB_STR_NOFREE) {
+      shared->nofree = TRUE;
+      shared->ptr = s->ptr;
+      s->flags &= ~MRB_STR_NOFREE;
     }
     else {
-      shared->ptr = s->ptr;
+      shared->nofree = FALSE;
+      if (s->aux.capa > s->len) {
+        s->ptr = shared->ptr = (char *)mrb_realloc(mrb, s->ptr, s->len+1);
+      }
+      else {
+        shared->ptr = s->ptr;
+      }
     }
     shared->len = s->len;
     s->aux.shared = shared;
@@ -301,13 +346,12 @@ mrb_str_literal(mrb_state *mrb, mrb_value str)
   s = mrb_obj_alloc_string(mrb);
   orig = mrb_str_ptr(str);
   if (!(orig->flags & MRB_STR_SHARED)) {
-    str_make_shared(mrb, mrb_str_ptr(str));
+    str_make_shared(mrb, orig);
   }
   shared = orig->aux.shared;
   shared->refcnt++;
   s->ptr = shared->ptr;
   s->len = shared->len;
-  s->aux.capa = 0;
   s->aux.shared = shared;
   s->flags |= MRB_STR_SHARED;
 
@@ -1234,7 +1278,7 @@ mrb_str_include(mrb_state *mrb, mrb_value self)
 
   mrb_get_args(mrb, "o", &str2);
   if (mrb_type(str2) == MRB_TT_FIXNUM) {
-    include_p = memchr(RSTRING_PTR(self), mrb_fixnum(str2), RSTRING_LEN(self));
+    include_p = (memchr(RSTRING_PTR(self), mrb_fixnum(str2), RSTRING_LEN(self)) != NULL);
   }
   else {
     str2 = mrb_str_to_str(mrb, str2);
@@ -1336,7 +1380,7 @@ str_replace(mrb_state *mrb, struct RString *s1, struct RString *s2)
   if (s2->flags & MRB_STR_SHARED) {
   L_SHARE:
     if (s1->flags & MRB_STR_SHARED){
-      mrb_str_decref(mrb, s1->aux.shared);
+      str_decref(mrb, s1->aux.shared);
     }
     else {
       mrb_free(mrb, s1->ptr);
@@ -1353,7 +1397,7 @@ str_replace(mrb_state *mrb, struct RString *s1, struct RString *s2)
   }
   else {
     if (s1->flags & MRB_STR_SHARED) {
-      mrb_str_decref(mrb, s1->aux.shared);
+      str_decref(mrb, s1->aux.shared);
       s1->flags &= ~MRB_STR_SHARED;
       s1->ptr = (char *)mrb_malloc(mrb, s2->len+1);
     }
@@ -2170,7 +2214,7 @@ mrb_str_to_dbl(mrb_state *mrb, mrb_value str, int badcheck)
 static mrb_value
 mrb_str_to_f(mrb_state *mrb, mrb_value self)
 {
-  return mrb_float_value(mrb_str_to_dbl(mrb, self, 0/*Qfalse*/));
+  return mrb_float_value(mrb, mrb_str_to_dbl(mrb, self, 0/*Qfalse*/));
 }
 
 /* 15.2.10.5.40 */
@@ -2349,16 +2393,11 @@ mrb_str_dump(mrb_state *mrb, mrb_value str)
           *q++ = c;
         }
         else {
-          mrb_value octstr;
-          mrb_value chr;
-          const char *ptr;
-          int len;
-          chr = mrb_fixnum_value(c & 0xff);
-          octstr = mrb_fixnum_to_str(mrb, chr, 8);
-          ptr = mrb_str_body(octstr, &len);
-          memcpy(q, "\\000", 4);
-          memcpy(q + 4 - len, ptr, len);
-          q += 4;
+          *q++ = '\\';
+          q[2] = '0' + c % 8; c /= 8;
+          q[1] = '0' + c % 8; c /= 8;
+          q[0] = '0' + c % 8;
+          q += 3;
         }
     }
   }
@@ -2442,15 +2481,10 @@ mrb_str_inspect(mrb_state *mrb, mrb_value str)
           continue;
       }
       else {
-        mrb_value octstr;
-        mrb_value chr;
-        const char *ptr;
-        int len;
-        chr = mrb_fixnum_value(c & 0xff);
-        octstr = mrb_fixnum_to_str(mrb, chr, 8);
-        ptr = mrb_str_body(octstr, &len);
-        memcpy(buf, "\\000", 4);
-        memcpy(buf + 4 - len, ptr, len);
+        buf[0] = '\\';
+        buf[3] = '0' + c % 8; c /= 8;
+        buf[2] = '0' + c % 8; c /= 8;
+        buf[1] = '0' + c % 8;
         mrb_str_buf_cat(mrb, result, buf, 4);
         continue;
       }
@@ -2493,54 +2527,54 @@ mrb_init_string(mrb_state *mrb)
   MRB_SET_INSTANCE_TT(s, MRB_TT_STRING);
   mrb_include_module(mrb, s, mrb_class_get(mrb, "Comparable"));
 
-  mrb_define_method(mrb, s, "+",               mrb_str_plus_m,          ARGS_REQ(1));              /* 15.2.10.5.2  */
-  mrb_define_method(mrb, s, "bytesize",        mrb_str_bytesize,        ARGS_NONE());
-  mrb_define_method(mrb, s, "size",            mrb_str_size,            ARGS_NONE());              /* 15.2.10.5.33 */
-  mrb_define_method(mrb, s, "length",          mrb_str_size,            ARGS_NONE());              /* 15.2.10.5.26 */
-  mrb_define_method(mrb, s, "*",               mrb_str_times,           ARGS_REQ(1));              /* 15.2.10.5.1  */
-  mrb_define_method(mrb, s, "<=>",             mrb_str_cmp_m,           ARGS_REQ(1));              /* 15.2.10.5.3  */
-  mrb_define_method(mrb, s, "==",              mrb_str_equal_m,         ARGS_REQ(1));              /* 15.2.10.5.4  */
-  mrb_define_method(mrb, s, "=~",              noregexp,                ARGS_REQ(1));              /* 15.2.10.5.5  */
-  mrb_define_method(mrb, s, "[]",              mrb_str_aref_m,          ARGS_ANY());               /* 15.2.10.5.6  */
-  mrb_define_method(mrb, s, "capitalize",      mrb_str_capitalize,      ARGS_NONE());              /* 15.2.10.5.7  */
-  mrb_define_method(mrb, s, "capitalize!",     mrb_str_capitalize_bang, ARGS_REQ(1));              /* 15.2.10.5.8  */
-  mrb_define_method(mrb, s, "chomp",           mrb_str_chomp,           ARGS_ANY());               /* 15.2.10.5.9  */
-  mrb_define_method(mrb, s, "chomp!",          mrb_str_chomp_bang,      ARGS_ANY());               /* 15.2.10.5.10 */
-  mrb_define_method(mrb, s, "chop",            mrb_str_chop,            ARGS_REQ(1));              /* 15.2.10.5.11 */
-  mrb_define_method(mrb, s, "chop!",           mrb_str_chop_bang,       ARGS_REQ(1));              /* 15.2.10.5.12 */
-  mrb_define_method(mrb, s, "downcase",        mrb_str_downcase,        ARGS_NONE());              /* 15.2.10.5.13 */
-  mrb_define_method(mrb, s, "downcase!",       mrb_str_downcase_bang,   ARGS_NONE());              /* 15.2.10.5.14 */
-  mrb_define_method(mrb, s, "empty?",          mrb_str_empty_p,         ARGS_NONE());              /* 15.2.10.5.16 */
-  mrb_define_method(mrb, s, "eql?",            mrb_str_eql,             ARGS_REQ(1));              /* 15.2.10.5.17 */
+  mrb_define_method(mrb, s, "+",               mrb_str_plus_m,          MRB_ARGS_REQ(1)); /* 15.2.10.5.2  */
+  mrb_define_method(mrb, s, "bytesize",        mrb_str_bytesize,        MRB_ARGS_NONE());
+  mrb_define_method(mrb, s, "size",            mrb_str_size,            MRB_ARGS_NONE()); /* 15.2.10.5.33 */
+  mrb_define_method(mrb, s, "length",          mrb_str_size,            MRB_ARGS_NONE()); /* 15.2.10.5.26 */
+  mrb_define_method(mrb, s, "*",               mrb_str_times,           MRB_ARGS_REQ(1)); /* 15.2.10.5.1  */
+  mrb_define_method(mrb, s, "<=>",             mrb_str_cmp_m,           MRB_ARGS_REQ(1)); /* 15.2.10.5.3  */
+  mrb_define_method(mrb, s, "==",              mrb_str_equal_m,         MRB_ARGS_REQ(1)); /* 15.2.10.5.4  */
+  mrb_define_method(mrb, s, "=~",              noregexp,                MRB_ARGS_REQ(1)); /* 15.2.10.5.5  */
+  mrb_define_method(mrb, s, "[]",              mrb_str_aref_m,          MRB_ARGS_ANY());  /* 15.2.10.5.6  */
+  mrb_define_method(mrb, s, "capitalize",      mrb_str_capitalize,      MRB_ARGS_NONE()); /* 15.2.10.5.7  */
+  mrb_define_method(mrb, s, "capitalize!",     mrb_str_capitalize_bang, MRB_ARGS_REQ(1)); /* 15.2.10.5.8  */
+  mrb_define_method(mrb, s, "chomp",           mrb_str_chomp,           MRB_ARGS_ANY());  /* 15.2.10.5.9  */
+  mrb_define_method(mrb, s, "chomp!",          mrb_str_chomp_bang,      MRB_ARGS_ANY());  /* 15.2.10.5.10 */
+  mrb_define_method(mrb, s, "chop",            mrb_str_chop,            MRB_ARGS_REQ(1)); /* 15.2.10.5.11 */
+  mrb_define_method(mrb, s, "chop!",           mrb_str_chop_bang,       MRB_ARGS_REQ(1)); /* 15.2.10.5.12 */
+  mrb_define_method(mrb, s, "downcase",        mrb_str_downcase,        MRB_ARGS_NONE()); /* 15.2.10.5.13 */
+  mrb_define_method(mrb, s, "downcase!",       mrb_str_downcase_bang,   MRB_ARGS_NONE()); /* 15.2.10.5.14 */
+  mrb_define_method(mrb, s, "empty?",          mrb_str_empty_p,         MRB_ARGS_NONE()); /* 15.2.10.5.16 */
+  mrb_define_method(mrb, s, "eql?",            mrb_str_eql,             MRB_ARGS_REQ(1)); /* 15.2.10.5.17 */
 
   // NOTE: Regexp not implemented
-  mrb_define_method(mrb, s, "gsub",            noregexp,                ARGS_REQ(1));              /* 15.2.10.5.18 */
-  mrb_define_method(mrb, s, "gsub!",           noregexp,                ARGS_REQ(1));              /* 15.2.10.5.19 */
+  mrb_define_method(mrb, s, "gsub",            noregexp,                MRB_ARGS_REQ(1)); /* 15.2.10.5.18 */
+  mrb_define_method(mrb, s, "gsub!",           noregexp,                MRB_ARGS_REQ(1)); /* 15.2.10.5.19 */
 
-  mrb_define_method(mrb, s, "hash",            mrb_str_hash_m,          ARGS_REQ(1));              /* 15.2.10.5.20 */
-  mrb_define_method(mrb, s, "include?",        mrb_str_include,         ARGS_REQ(1));              /* 15.2.10.5.21 */
-  mrb_define_method(mrb, s, "index",           mrb_str_index_m,         ARGS_ANY());               /* 15.2.10.5.22 */
-  mrb_define_method(mrb, s, "initialize",      mrb_str_init,            ARGS_REQ(1));              /* 15.2.10.5.23 */
-  mrb_define_method(mrb, s, "initialize_copy", mrb_str_replace,         ARGS_REQ(1));              /* 15.2.10.5.24 */
-  mrb_define_method(mrb, s, "intern",          mrb_str_intern,          ARGS_NONE());              /* 15.2.10.5.25 */
-  mrb_define_method(mrb, s, "match",           noregexp,                ARGS_REQ(1));              /* 15.2.10.5.27 */
-  mrb_define_method(mrb, s, "replace",         mrb_str_replace,         ARGS_REQ(1));              /* 15.2.10.5.28 */
-  mrb_define_method(mrb, s, "reverse",         mrb_str_reverse,         ARGS_NONE());              /* 15.2.10.5.29 */
-  mrb_define_method(mrb, s, "reverse!",        mrb_str_reverse_bang,    ARGS_NONE());              /* 15.2.10.5.30 */
-  mrb_define_method(mrb, s, "rindex",          mrb_str_rindex_m,        ARGS_ANY());               /* 15.2.10.5.31 */
-  mrb_define_method(mrb, s, "scan",            noregexp,                ARGS_REQ(1));              /* 15.2.10.5.32 */
-  mrb_define_method(mrb, s, "slice",           mrb_str_aref_m,          ARGS_ANY());               /* 15.2.10.5.34 */
-  mrb_define_method(mrb, s, "split",           mrb_str_split_m,         ARGS_ANY());               /* 15.2.10.5.35 */
-  mrb_define_method(mrb, s, "sub",             noregexp,                ARGS_REQ(1));              /* 15.2.10.5.36 */
-  mrb_define_method(mrb, s, "sub!",            noregexp,                ARGS_REQ(1));              /* 15.2.10.5.37 */
+  mrb_define_method(mrb, s, "hash",            mrb_str_hash_m,          MRB_ARGS_REQ(1)); /* 15.2.10.5.20 */
+  mrb_define_method(mrb, s, "include?",        mrb_str_include,         MRB_ARGS_REQ(1)); /* 15.2.10.5.21 */
+  mrb_define_method(mrb, s, "index",           mrb_str_index_m,         MRB_ARGS_ANY());  /* 15.2.10.5.22 */
+  mrb_define_method(mrb, s, "initialize",      mrb_str_init,            MRB_ARGS_REQ(1)); /* 15.2.10.5.23 */
+  mrb_define_method(mrb, s, "initialize_copy", mrb_str_replace,         MRB_ARGS_REQ(1)); /* 15.2.10.5.24 */
+  mrb_define_method(mrb, s, "intern",          mrb_str_intern,          MRB_ARGS_NONE()); /* 15.2.10.5.25 */
+  mrb_define_method(mrb, s, "match",           noregexp,                MRB_ARGS_REQ(1)); /* 15.2.10.5.27 */
+  mrb_define_method(mrb, s, "replace",         mrb_str_replace,         MRB_ARGS_REQ(1)); /* 15.2.10.5.28 */
+  mrb_define_method(mrb, s, "reverse",         mrb_str_reverse,         MRB_ARGS_NONE()); /* 15.2.10.5.29 */
+  mrb_define_method(mrb, s, "reverse!",        mrb_str_reverse_bang,    MRB_ARGS_NONE()); /* 15.2.10.5.30 */
+  mrb_define_method(mrb, s, "rindex",          mrb_str_rindex_m,        MRB_ARGS_ANY());  /* 15.2.10.5.31 */
+  mrb_define_method(mrb, s, "scan",            noregexp,                MRB_ARGS_REQ(1)); /* 15.2.10.5.32 */
+  mrb_define_method(mrb, s, "slice",           mrb_str_aref_m,          MRB_ARGS_ANY());  /* 15.2.10.5.34 */
+  mrb_define_method(mrb, s, "split",           mrb_str_split_m,         MRB_ARGS_ANY());  /* 15.2.10.5.35 */
+  mrb_define_method(mrb, s, "sub",             noregexp,                MRB_ARGS_REQ(1)); /* 15.2.10.5.36 */
+  mrb_define_method(mrb, s, "sub!",            noregexp,                MRB_ARGS_REQ(1)); /* 15.2.10.5.37 */
 
-  mrb_define_method(mrb, s, "to_i",            mrb_str_to_i,            ARGS_ANY());               /* 15.2.10.5.38 */
-  mrb_define_method(mrb, s, "to_f",            mrb_str_to_f,            ARGS_NONE());              /* 15.2.10.5.39 */
-  mrb_define_method(mrb, s, "to_s",            mrb_str_to_s,            ARGS_NONE());              /* 15.2.10.5.40 */
-  mrb_define_method(mrb, s, "to_str",          mrb_str_to_s,            ARGS_NONE());              /* 15.2.10.5.40 */
-  mrb_define_method(mrb, s, "to_sym",          mrb_str_intern,          ARGS_NONE());              /* 15.2.10.5.41 */
-  mrb_define_method(mrb, s, "upcase",          mrb_str_upcase,          ARGS_REQ(1));              /* 15.2.10.5.42 */
-  mrb_define_method(mrb, s, "upcase!",         mrb_str_upcase_bang,     ARGS_REQ(1));              /* 15.2.10.5.43 */
-  mrb_define_method(mrb, s, "inspect",         mrb_str_inspect,         ARGS_NONE());              /* 15.2.10.5.46(x) */
-  mrb_define_method(mrb, s, "bytes",           mrb_str_bytes,           ARGS_NONE());
+  mrb_define_method(mrb, s, "to_i",            mrb_str_to_i,            MRB_ARGS_ANY());  /* 15.2.10.5.38 */
+  mrb_define_method(mrb, s, "to_f",            mrb_str_to_f,            MRB_ARGS_NONE()); /* 15.2.10.5.39 */
+  mrb_define_method(mrb, s, "to_s",            mrb_str_to_s,            MRB_ARGS_NONE()); /* 15.2.10.5.40 */
+  mrb_define_method(mrb, s, "to_str",          mrb_str_to_s,            MRB_ARGS_NONE()); /* 15.2.10.5.40 */
+  mrb_define_method(mrb, s, "to_sym",          mrb_str_intern,          MRB_ARGS_NONE()); /* 15.2.10.5.41 */
+  mrb_define_method(mrb, s, "upcase",          mrb_str_upcase,          MRB_ARGS_REQ(1)); /* 15.2.10.5.42 */
+  mrb_define_method(mrb, s, "upcase!",         mrb_str_upcase_bang,     MRB_ARGS_REQ(1)); /* 15.2.10.5.43 */
+  mrb_define_method(mrb, s, "inspect",         mrb_str_inspect,         MRB_ARGS_NONE()); /* 15.2.10.5.46(x) */
+  mrb_define_method(mrb, s, "bytes",           mrb_str_bytes,           MRB_ARGS_NONE());
 }

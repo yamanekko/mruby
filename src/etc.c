@@ -85,13 +85,8 @@ mrb_exec_recursive(mrb_state *mrb, mrb_value (*func) (mrb_state *, mrb_value, mr
   return func(mrb, obj, *(mrb_value*)arg, 0);
 }
 
-/*
- * Calls func(obj, arg, recursive), where recursive is non-zero if the
- * current method is called recursively on the ordered pair <obj, paired_obj>
- */
-
 mrb_sym
-mrb_to_id(mrb_state *mrb, mrb_value name)
+mrb_obj_to_sym(mrb_state *mrb, mrb_value name)
 {
   mrb_value tmp;
   mrb_sym id;
@@ -184,4 +179,26 @@ mrb_obj_id(mrb_value obj)
     return MakeID(obj.value.p);
   }
 }
+
+#ifdef MRB_WORD_BOXING
+mrb_value
+mrb_float_value(mrb_state *mrb, mrb_float f)
+{
+  mrb_value v;
+
+  v.value.p = mrb_obj_alloc(mrb, MRB_TT_FLOAT, mrb->float_class);
+  v.value.fp->f = f;
+  return v;
+}
+
+mrb_value
+mrb_voidp_value(mrb_state *mrb, void *p)
+{
+  mrb_value v;
+
+  v.value.p = mrb_obj_alloc(mrb, MRB_TT_VOIDP, mrb->object_class);
+  v.value.vp->p = p;
+  return v;
+}
+#endif  /* MRB_WORD_BOXING */
 
