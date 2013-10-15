@@ -15,22 +15,22 @@ GPIO_InitTypeDef  GPIO_InitStructure;
 static mrb_value
 mrb_led_initialize(mrb_state *mrb, mrb_value self)
 {
-/*	  mrb_int n;
+	  mrb_int n;
 	  mrb_value pin;
 	  mrb_get_args(mrb, "i", &n);
 	  pin = mrb_fixnum_value(n);
 	  mrb_iv_set(mrb, self, mrb_intern(mrb, "@pin"), pin);
-*/
+
 	  /* GPIOD Periph clock enable */
-	  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
+//	  RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
 
 	  /* Configure PD12, PD13, PD14 and PD15 in output pushpull mode */
-	  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13| GPIO_Pin_14| GPIO_Pin_15;
-	  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
-	  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
-	  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
-	  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
-	  GPIO_Init(GPIOD, &GPIO_InitStructure);
+//	  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13| GPIO_Pin_14| GPIO_Pin_15;
+//	  GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
+//	  GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
+//	  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
+//	  GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
+//	  GPIO_Init(GPIOD, &GPIO_InitStructure);
 
 
 	return self;
@@ -90,7 +90,7 @@ mrb_mruby_led_gem_init(mrb_state* mrb) {
 
 
   /* �������` */
-  mrb_define_method(mrb, led, "init", mrb_led_initialize, ARGS_NONE() /* , ARGS_REQ(1) */);
+  mrb_define_method(mrb, led, "initialize", mrb_led_initialize, ARGS_REQ(1));
   mrb_define_method(mrb, led, "on", mrb_led_on, ARGS_NONE());
   mrb_define_method(mrb, led, "off", mrb_led_off, ARGS_NONE());
   mrb_define_method(mrb, led, "toggle", mrb_led_toggle, ARGS_NONE());
