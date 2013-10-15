@@ -12,7 +12,7 @@ MRuby::Build.new do |conf|
   # conf.gem :git => 'git@github.com:masuidrive/mrbgems-example.git', :branch => 'master', :options => '-v'
 
   # include the default GEMs
-  conf.gembox 'default'
+#  conf.gembox 'default'
 
   # C compiler settings
   # conf.cc do |cc|
@@ -87,10 +87,70 @@ end
 #
 # end
 
+
+MRuby::CrossBuild.new('rs') do |conf|
+
+  # Use led class
+  conf.gem 'mrbgems/mruby-rs-led'
+  conf.gem 'mrbgems/mruby-rs-timer'
+
+# STM32_PROJ_PATH = '/Users/yuri/stm32f4/workspace/ws1/STM32F4-Discovery'
+# STM32_LIB_PATH = "#{STM32_PROJ_PATH}/Libraries"
+# STM32_UTIL_PATH = "#{STM32_PROJ_PATH}/Utilities"
+
+# CFLAGS	= "-Mthumb -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -D__FPU_USED=1 -g -Os -gdwarf-2 -Wall -Wstrict-prototypes -fverbose-asm -ffunction-sections -fdata-sections -DRUN_FROM_FLASH=1"
+
+# CFLAGS	= "-Wall -Werror -O2 -nostdlib -nostartfiles -ffreestanding"
+# CFLAGS = "-Wall -nostartfiles -ffreestanding -march=armv6 -mtune=arm1176jzf-s -mhard-float -ffast-math -g -Os"
+CFLAGS = "-Wall -nostartfiles -ffreestanding -g -mcpu=arm1176jzf-s -mtune=arm1176jzf-s -mhard-float -ggdb -g -O0"
+
+  conf.cc do |cc|
+#    cc.command='/Users/yuri/gcc-arm-none-eabi/bin/arm-none-eabi-gcc'
+#    cc.command='/Users/yuri/gcc-arm-none-eabi/bin/arm-none-eabi-gcc'
+#    cc.command='/Users/yuri/yagarto/yagarto-4.6.2/bin/arm-none-eabi-gcc'
+    cc.command='/opt/gnuarm/bin/arm-none-eabi-gcc'
+
+   cc.include_paths = ["#{MRUBY_ROOT}/mrbgems/mruby-rs-led/src/",
+                       "#{MRUBY_ROOT}/include/"]
+
+ #   cc.include_paths = ["#{STM32_PROJ_PATH}/inc/",
+ #                       "#{STM32_PROJ_PATH}/cmsis/device/",
+ #                       "#{STM32_PROJ_PATH}/cmsis/core/",
+ #                       "#{STM32_LIB_PATH}/STM32F4xx_StdPeriph_Driver/inc/",
+ #                       "#{STM32_LIB_PATH}/STM32_USB_Device_Library/Class/hid/inc/",
+ #                       "#{STM32_LIB_PATH}/STM32_USB_Device_Library/Core/inc/",
+ #                       "#{STM32_LIB_PATH}/STM32_USB_OTG_Driver/inc/",
+ #                       "#{STM32_UTIL_PATH}/STM32F4-Discovery/",
+ #                       "#{MRUBY_ROOT}/mrbgems/mruby-led/src/",
+    #                       "#{MRUBY_ROOT}/include/"]
+
+    cc.flags << "#{CFLAGS}"
+#    cc.compile_options = '%{flags} -MMD -o %{outfile} -c %{infile}'
+#    cc.compile_options = '%{flags} -MD -MP -MF -o %{outfile} -c %{infile}'
+#	$(CC) $(CFLAGS) $^ -o $@
+  end
+
+  conf.archiver do |archiver|
+#    archiver.command = '/Users/yuri/gcc-arm-none-eabi/bin/arm-none-eabi-ar'
+#    archiver.command = '/Users/yuri/yagarto/yagarto-4.6.2/bin/arm-none-eabi-ar'
+    archiver.command = '/opt/gnuarm/bin/arm-none-eabi-ar'
+#    archiver.archive_options = '--warn --fatal-warnings'
+    archiver.archive_options = 'rcs %{outfile} %{objs}'
+  end
+
+  # No binaries necessary
+  conf.bins = []
+end
+
+
+
+
+
 MRuby::CrossBuild.new('STM32F4') do |conf|
 
   # Use led class
   conf.gem 'mrbgems/mruby-led'
+  conf.gem 'mrbgems/mruby-stm-timer'
 
 
 STM32_PROJ_PATH = '/Users/yuri/stm32f4/workspace/ws1/STM32F4-Discovery'
@@ -100,7 +160,7 @@ STM32_UTIL_PATH = "#{STM32_PROJ_PATH}/Utilities"
 CFLAGS	= "-mthumb -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -D__FPU_USED=1 -g -Os -gdwarf-2 -Wall -Wstrict-prototypes -fverbose-asm -ffunction-sections -fdata-sections -DRUN_FROM_FLASH=1"
 
   conf.cc do |cc|
-    cc.command='/Users/yuri/yagarto/yagarto-4.6.2/bin/arm-none-eabi-gcc'
+    cc.command='/Users/yuri/gcc-arm-none-eabi/bin/arm-none-eabi-gcc'
     cc.include_paths = ["#{STM32_PROJ_PATH}/inc/",
                         "#{STM32_PROJ_PATH}/cmsis/device/",
                         "#{STM32_PROJ_PATH}/cmsis/core/",
@@ -119,10 +179,12 @@ CFLAGS	= "-mthumb -mcpu=cortex-m4 -mfloat-abi=hard -mfpu=fpv4-sp-d16 -D__FPU_USE
   end
 
   conf.archiver do |archiver|
-    archiver.command = '/Users/yuri/yagarto/yagarto-4.6.2/bin/arm-none-eabi-ar'
+    archiver.command = '/Users/yuri/gcc-arm-none-eabi/bin/arm-none-eabi-ar'
     archiver.archive_options = 'rcs %{outfile} %{objs}'
   end
 
   # No binaries necessary
   conf.bins = []
 end
+
+
