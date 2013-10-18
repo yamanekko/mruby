@@ -10,7 +10,7 @@
 TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
 TIM_OCInitTypeDef  TIM_OCInitStructure;
 __IO uint16_t CCR1_Val = 54618;
-uint16_t PrescalerValue = 0;
+//? uint16_t PrescalerValue = 0;
 //uint32_t interval = 1000;	//ms
 
 uint16_t capture = 0;
@@ -42,6 +42,47 @@ mrb_stm_timer_check(mrb_state *mrb, mrb_value self)
 		TIM_ClearITPendingBit(TIMx, TIM_IT_Update);
 		return mrb_true_value();
 	}
+	return mrb_false_value();
+}
+
+static mrb_value
+mrb_stm_timer_restart(mrb_state *mrb, mrb_value self)
+{
+	TIM_TypeDef *TIMx = TIM2;
+	mrb_value val= mrb_iv_get(mrb, self, mrb_intern(mrb, "@timerno"));
+	mrb_int i = mrb_fixnum(val);
+	uint16_t no = (uint16_t)i;
+	switch(no){
+	case 2:
+		TIMx = TIM2;
+		break;
+	case 4:
+		TIMx = TIM4;
+		break;
+	}
+	TIM_Cmd(TIMx, ENABLE);
+
+	return mrb_false_value();
+}
+
+
+static mrb_value
+mrb_stm_timer_stop(mrb_state *mrb, mrb_value self)
+{
+	TIM_TypeDef *TIMx = TIM2;
+	mrb_value val= mrb_iv_get(mrb, self, mrb_intern(mrb, "@timerno"));
+	mrb_int i = mrb_fixnum(val);
+	uint16_t no = (uint16_t)i;
+	switch(no){
+	case 2:
+		TIMx = TIM2;
+		break;
+	case 4:
+		TIMx = TIM4;
+		break;
+	}
+	TIM_Cmd(TIMx, DISABLE);
+
 	return mrb_false_value();
 }
 
@@ -125,8 +166,6 @@ mrb_stm_timer_initialize(mrb_state* mrb, mrb_value self) {
 	  	if(!mrb_fixnum_p(val)){
 		  	mrb_iv_set(mrb, self, mrb_intern(mrb, "@timerno"), mrb_fixnum_value(2));
 	  	}else{
-			mrb_int i = mrb_fixnum(val);
-			int16_t tmp = (uint16_t)i;
 	  		mrb_iv_set(mrb, self, mrb_intern(mrb, "@timerno"), val);
 	  	}
 	return self;
@@ -148,9 +187,9 @@ mrb_stm_timter_interval(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_stm_timter_no(mrb_state *mrb, mrb_value self)
 {
-	  mrb_int n;
+/*	  mrb_int n;
 	  mrb_value val;
-/*
+
 	  	mrb_get_args(mrb, "i", &n);
 	  	val = mrb_fixnum_value(n);
 		mrb_int i = mrb_fixnum(val);
@@ -180,6 +219,8 @@ mrb_mruby_stm_timer_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, stm_timer, "initialize", mrb_stm_timer_initialize, ARGS_OPT(1));
   mrb_define_method(mrb, stm_timer, "interval", mrb_stm_timter_interval, ARGS_REQ(1));
   mrb_define_method(mrb, stm_timer, "timerNo", mrb_stm_timter_no, ARGS_REQ(1));
+  mrb_define_method(mrb, stm_timer, "restart", mrb_stm_timer_restart, ARGS_NONE());
+  mrb_define_method(mrb, stm_timer, "stop", mrb_stm_timer_stop, ARGS_NONE());
 
 }
 
