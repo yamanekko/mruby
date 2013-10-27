@@ -151,6 +151,8 @@ MRuby::CrossBuild.new('STM32F4') do |conf|
   # Use led class
   conf.gem 'mrbgems/mruby-led'
   conf.gem 'mrbgems/mruby-stm-timer'
+  conf.gem 'mrbgems/mruby-stm-button'
+  conf.gem 'mrbgems/mruby-stm-mems'
 
 
 STM32_PROJ_PATH = '/Users/yuri/stm32f4/workspace/ws1/STM32F4-Discovery'
