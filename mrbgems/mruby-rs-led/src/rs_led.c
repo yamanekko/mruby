@@ -22,11 +22,58 @@ mrb_rs_led_initialize(mrb_state *mrb, mrb_value self)
 {
 	  mrb_int n;
 	  mrb_value pin;
+	  uint16_t iopin;
 	  mrb_get_args(mrb, "i", &n);
 	  pin = mrb_fixnum_value(n);
+	  iopin = mrb_fixnum(pin);
 	  mrb_iv_set(mrb, self, mrb_intern(mrb, "@pin"), pin);
 	  mrb_iv_set(mrb, self, mrb_intern(mrb, "@status"), mrb_false_value());
-	return self;
+#if 0
+	  switch (iopin){
+	  case 16:
+		  //16
+		  ra=GET32(GPFSEL1);
+		  ra&=~(7<<18);
+		  ra|=1<<18;
+		  PUT32(GPFSEL1,ra);
+		  PUT32(GPSET0,1<<16);	//ここでLEDがついてしまう
+		  break;
+	  case 17:
+		  //17
+		  ra=GET32(GPFSEL1);
+		  ra&=~(7<<21);
+		  ra|=1<<21;
+		  PUT32(GPFSEL1,ra);
+		  PUT32(GPSET0,1<<17);	//これを他のGPIOにもする必要がありそう
+		  break;
+	  case 18:
+		  //18
+		  ra=GET32(GPFSEL1);
+		  ra&=~(7<<24);
+		  ra|=1<<24;
+		  PUT32(GPFSEL1,ra);
+		  PUT32(GPSET0,1<<18);	//これを他のGPIOにもする必要がありそう
+		  break;
+	  case 23:
+		  //23
+		  ra=GET32(GPFSEL2);
+		  ra&=~(7<<9);	//23 -> 3*3
+		  ra|=1<<9;
+		  PUT32(GPFSEL2,ra);
+		  PUT32(GPSET0,1<<23);
+		  break;
+	  case 8:
+		  //8
+		  ra=GET32(GPFSEL0);
+		  ra&=~(7<<24);	//25 -> 3*4
+		  ra|=1<<24;
+		  PUT32(GPFSEL0,ra);
+		  PUT32(GPSET0,1<<8);	//これを他のGPIOにもする必要がありそう
+		  break;
+	  }
+	  return self;
+#endif
+
 }
 
 static mrb_value
@@ -107,6 +154,7 @@ mrb_mruby_rs_led_gem_init(mrb_state* mrb) {
 
 //  mrb_define_const(mrb,led, "ACT", mrb_fixnum_value(0));
 
+// move led.new()
   //16
   ra=GET32(GPFSEL1);
   ra&=~(7<<18);
@@ -125,12 +173,13 @@ mrb_mruby_rs_led_gem_init(mrb_state* mrb) {
   ra|=1<<24;
   PUT32(GPFSEL1,ra);
 
-
+  //23
   ra=GET32(GPFSEL2);
   ra&=~(7<<9);	//23 -> 3*3
   ra|=1<<9;
   PUT32(GPFSEL2,ra);
 
+  //25
   ra=GET32(GPFSEL0);
   ra&=~(7<<24);	//25 -> 3*4
   ra|=1<<24;
@@ -141,6 +190,8 @@ mrb_mruby_rs_led_gem_init(mrb_state* mrb) {
   PUT32(GPSET0,1<<18);	//これを他のGPIOにもする必要がありそう
   PUT32(GPSET0,1<<23);
   PUT32(GPSET0,1<<8);	//これを他のGPIOにもする必要がありそう
+
+
 }
 
 void
