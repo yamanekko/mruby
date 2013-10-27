@@ -43,7 +43,7 @@ struct_ivar_get(mrb_state *mrb, mrb_value c, mrb_sym id)
 mrb_value
 mrb_struct_iv_get(mrb_state *mrb, mrb_value c, const char *name)
 {
-  return struct_ivar_get(mrb, c, mrb_intern(mrb, name));
+  return struct_ivar_get(mrb, c, mrb_intern_cstr(mrb, name));
 }
 
 mrb_value
@@ -185,8 +185,7 @@ static mrb_value
 mrb_struct_set(mrb_state *mrb, mrb_value obj, mrb_value val)
 {
   const char *name;
-  int i;
-  size_t len;
+  size_t i, len;
   mrb_sym mid;
   mrb_value members, slot, *ptr, *ptr_members;
 
@@ -295,7 +294,7 @@ mrb_struct_define(mrb_state *mrb, const char *name, ...)
 
   va_start(ar, name);
   while ((mem = va_arg(ar, char*)) != 0) {
-    mrb_sym slot = mrb_intern(mrb, mem);
+    mrb_sym slot = mrb_intern_cstr(mrb, mem);
     mrb_ary_push(mrb, ary, mrb_symbol_value(slot));
   }
   va_end(ar);

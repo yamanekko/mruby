@@ -12,6 +12,7 @@
 #include "mruby/irep.h"
 #include "mruby/numeric.h"
 #include "mruby/string.h"
+#include "mruby/debug.h"
 #include "node.h"
 #include "opcode.h"
 #include "re.h"
@@ -51,15 +52,15 @@ typedef struct scope {
 
   struct loopinfo *loop;
   int ensure_level;
-  char *filename;
-  short lineno;
+  char const *filename;
+  uint16_t lineno;
 
   mrb_code *iseq;
-  short *lines;
+  uint16_t *lines;
   int icapa;
 
   mrb_irep *irep;
-  int pcapa;
+  size_t pcapa;
   int scapa;
 
   int nlocals;
@@ -67,6 +68,10 @@ typedef struct scope {
   int ai;
 
   int idx;
+
+  int debug_start_pos;
+  uint16_t filename_index;
+  parser_state* parser;
 } codegen_scope;
 
 static codegen_scope* scope_new(mrb_state *mrb, codegen_scope *prev, node *lv);
@@ -141,7 +146,8 @@ genop(codegen_scope *s, mrb_code i)
     s->icapa *= 2;
     s->iseq = (mrb_code *)codegen_realloc(s, s->iseq, sizeof(mrb_code)*s->icapa);
     if (s->lines) {
-      s->lines = (short*)codegen_realloc(s, s->lines, sizeof(short)*s->icapa);
+      s->lines = (uint16_t*)codegen_realloc(s, s->lines, sizeof(short)*s->icapa);
+      s->irep->lines = s->lines;
     }
   }
   s->iseq[s->pc] = i;
@@ -271,18 +277,6 @@ genop_peep(codegen_scope *s, mrb_code i, int val)
       case OP_MOVE:
         s->iseq[s->pc-1] = MKOP_AB(OP_RETURN, GETARG_B(i0), OP_R_NORMAL);
         return;
-      case OP_LOADI:
-        s->iseq[s->pc-1] = MKOP_AsBx(OP_LOADI, 0, GETARG_sBx(i0));
-        genop(s, MKOP_AB(OP_RETURN, 0, OP_R_NORMAL));
-        return;
-      case OP_ARRAY:
-      case OP_HASH:
-      case OP_RANGE:
-      case OP_AREF:
-      case OP_GETUPVAR:
-        s->iseq[s->pc-1] = MKOP_ABC(c0, 0, GETARG_B(i0), GETARG_C(i0));
-        genop(s, MKOP_AB(OP_RETURN, 0, OP_R_NORMAL));
-        return;
       case OP_SETIV:
       case OP_SETCV:
       case OP_SETCONST:
@@ -293,29 +287,6 @@ genop_peep(codegen_scope *s, mrb_code i, int val)
         genop_peep(s, i0, NOVAL);
         i0 = s->iseq[s->pc-1];
         genop(s, MKOP_AB(OP_RETURN, GETARG_A(i0), OP_R_NORMAL));
-        return;
-      case OP_LOADSYM:
-      case OP_GETGLOBAL:
-      case OP_GETIV:
-      case OP_GETCV:
-      case OP_GETCONST:
-      case OP_GETSPECIAL:
-      case OP_LOADL:
-      case OP_STRING:
-        s->iseq[s->pc-1] = MKOP_ABx(c0, 0, GETARG_Bx(i0));
-        genop(s, MKOP_AB(OP_RETURN, 0, OP_R_NORMAL));
-        return;
-      case OP_SCLASS:
-        s->iseq[s->pc-1] = MKOP_AB(c0, GETARG_A(i), GETARG_B(i0));
-        genop(s, MKOP_AB(OP_RETURN, 0, OP_R_NORMAL));
-        return;
-      case OP_LOADNIL:
-      case OP_LOADSELF:
-      case OP_LOADT:
-      case OP_LOADF:
-      case OP_OCLASS:
-        s->iseq[s->pc-1] = MKOP_A(c0, 0);
-        genop(s, MKOP_AB(OP_RETURN, 0, OP_R_NORMAL));
         return;
 #if 0
       case OP_SEND:
@@ -426,9 +397,8 @@ push_(codegen_scope *s)
 static inline int
 new_lit(codegen_scope *s, mrb_value val)
 {
-  int i;
+  size_t i;
 
-  
   switch (mrb_type(val)) {
   case MRB_TT_STRING:
     for (i=0; i<s->irep->plen; i++) {
@@ -448,7 +418,7 @@ new_lit(codegen_scope *s, mrb_value val)
     }
     break;
   }
-    
+
   if (s->irep->plen == s->pcapa) {
     s->pcapa *= 2;
     s->irep->pool = (mrb_value *)codegen_realloc(s, s->irep->pool, sizeof(mrb_value)*s->pcapa);
@@ -462,7 +432,7 @@ new_lit(codegen_scope *s, mrb_value val)
 static inline int
 new_msym(codegen_scope *s, mrb_sym sym)
 {
-  int i, len;
+  size_t i, len;
 
   len = s->irep->slen;
   if (len > 256) len = 256;
@@ -481,7 +451,7 @@ new_msym(codegen_scope *s, mrb_sym sym)
 static inline int
 new_sym(codegen_scope *s, mrb_sym sym)
 {
-  int i;
+  size_t i;
 
   for (i=0; i<s->irep->slen; i++) {
     if (s->irep->syms[i] == sym) return i;
@@ -676,7 +646,9 @@ scope_body(codegen_scope *s, node *tree)
       genop(scope, MKOP_AB(OP_RETURN, 0, OP_R_NORMAL));
     }
     else {
-      genop_peep(scope, MKOP_AB(OP_RETURN, scope->sp, OP_R_NORMAL), NOVAL);
+      pop();
+      genop_peep(scope, MKOP_AB(OP_RETURN, cursp(), OP_R_NORMAL), NOVAL);
+      push();
     }
   }
   scope_finish(scope);
@@ -684,7 +656,7 @@ scope_body(codegen_scope *s, node *tree)
   return idx - s->idx;
 }
 
-static int
+static mrb_bool
 nosplat(node *t)
 {
   while (t) {
@@ -714,16 +686,23 @@ static int
 gen_values(codegen_scope *s, node *t, int val)
 {
   int n = 0;
+  int is_splat;
 
   while (t) {
-    if (n >= 127 || (intptr_t)t->car->car == NODE_SPLAT) { // splat mode
+    is_splat = (intptr_t)t->car->car == NODE_SPLAT; // splat mode
+    if (n >= 127 || is_splat) {
       if (val) {
         pop_n(n);
         genop(s, MKOP_ABC(OP_ARRAY, cursp(), cursp(), n));
         push();
         codegen(s, t->car, VAL);
         pop(); pop();
-        genop(s, MKOP_AB(OP_ARYCAT, cursp(), cursp()+1));
+        if (is_splat) {
+            genop(s, MKOP_AB(OP_ARYCAT, cursp(), cursp()+1));
+        }
+        else {
+            genop(s, MKOP_AB(OP_ARYPUSH, cursp(), cursp()+1));
+        }
         t = t->cdr;
         while (t) {
           push();
@@ -960,6 +939,9 @@ gen_vmassignment(codegen_scope *s, node *tree, int rhs, int val)
       }
     }
   }
+  else {
+    pop();
+  }
 }
 
 static void
@@ -1105,6 +1087,15 @@ codegen(codegen_scope *s, node *tree, int val)
   int nt;
 
   if (!tree) return;
+
+  if (s->irep && s->pc > 0 && s->filename_index != tree->filename_index) {
+    s->irep->filename = mrb_parser_get_filename(s->parser, s->filename_index);
+    mrb_debug_info_append_file(s->mrb, s->irep, s->debug_start_pos, s->pc);
+    s->debug_start_pos = s->pc;
+    s->filename_index = tree->filename_index;
+    s->filename = mrb_parser_get_filename(s->parser, tree->filename_index);
+  }
+
   nt = (intptr_t)tree->car;
   s->lineno = tree->lineno;
   tree = tree->cdr;
@@ -1552,7 +1543,6 @@ codegen(codegen_scope *s, node *tree, int val)
         // variable rhs
         codegen(s, t, VAL);
         gen_vmassignment(s, tree->car, rhs, val);
-        if (!val) pop();
       }
     }
     break;
@@ -2065,7 +2055,7 @@ codegen(codegen_scope *s, node *tree, int val)
       char *p1 = (char*)tree->car;
       char *p2 = (char*)tree->cdr;
       int ai = mrb_gc_arena_save(s->mrb);
-      int sym = new_sym(s, mrb_intern(s->mrb, REGEXP_CLASS));
+      int sym = new_sym(s, mrb_intern2(s->mrb, REGEXP_CLASS, REGEXP_CLASS_CSTR_LEN));
       int off = new_lit(s, mrb_str_new(s->mrb, p1, strlen(p1)));
       int argc = 1;
 
@@ -2092,7 +2082,7 @@ codegen(codegen_scope *s, node *tree, int val)
     if (val) {
       node *n = tree->car;
       int ai = mrb_gc_arena_save(s->mrb);
-      int sym = new_sym(s, mrb_intern(s->mrb, REGEXP_CLASS));
+      int sym = new_sym(s, mrb_intern2(s->mrb, REGEXP_CLASS, REGEXP_CLASS_CSTR_LEN));
       int argc = 1;
       int off;
       char *p;
@@ -2319,7 +2309,7 @@ codegen(codegen_scope *s, node *tree, int val)
       pop();
       genop(s, MKOP_AB(OP_METHOD, cursp(), sym));
       if (val) {
-        genop(s, MKOP_A(OP_LOADNIL, cursp()));
+        genop(s, MKOP_ABx(OP_LOADSYM, cursp(), sym));
         push();
       }
     }
@@ -2339,7 +2329,7 @@ codegen(codegen_scope *s, node *tree, int val)
       pop();
       genop(s, MKOP_AB(OP_METHOD, cursp(), sym));
       if (val) {
-        genop(s, MKOP_A(OP_LOADNIL, cursp()));
+        genop(s, MKOP_ABx(OP_LOADSYM, cursp(), sym));
         push();
       }
     }
@@ -2391,9 +2381,23 @@ scope_new(mrb_state *mrb, codegen_scope *prev, node *lv)
 
   p->filename = prev->filename;
   if (p->filename) {
-    p->lines = (short*)mrb_malloc(mrb, sizeof(short)*p->icapa);
+    p->lines = (uint16_t*)mrb_malloc(mrb, sizeof(short)*p->icapa);
   }
   p->lineno = prev->lineno;
+
+  // debug setting
+  p->debug_start_pos = 0;
+  if(p->filename) {
+    mrb_debug_info_alloc(mrb, p->irep);
+    p->irep->filename = p->filename;
+    p->irep->lines = p->lines;
+  }
+  else {
+    p->irep->debug_info = NULL;
+  }
+  p->parser = prev->parser;
+  p->filename_index = prev->filename_index;
+
   return p;
 }
 
@@ -2419,6 +2423,9 @@ scope_finish(codegen_scope *s)
   irep->pool = (mrb_value *)codegen_realloc(s, irep->pool, sizeof(mrb_value)*irep->plen);
   irep->syms = (mrb_sym *)codegen_realloc(s, irep->syms, sizeof(mrb_sym)*irep->slen);
   if (s->filename) {
+    s->irep->filename = mrb_parser_get_filename(s->parser, s->filename_index);
+    mrb_debug_info_append_file(mrb, s->irep, s->debug_start_pos, s->pc);
+
     fname_len = strlen(s->filename);
     fname = codegen_malloc(s, fname_len + 1);
     memcpy(fname, s->filename, fname_len);
@@ -2506,7 +2513,8 @@ codedump(mrb_state *mrb, int n)
 {
 #ifdef ENABLE_STDIO
   mrb_irep *irep = mrb->irep[n];
-  int i, ai;
+  uint32_t i;
+  int ai;
   mrb_code c;
 
   if (!irep) return;
@@ -2829,7 +2837,6 @@ codedump_all(mrb_state *mrb, int start)
     codedump(mrb, i);
   }
 }
-
 static int
 codegen_start(mrb_state *mrb, parser_state *p)
 {
@@ -2839,16 +2846,18 @@ codegen_start(mrb_state *mrb, parser_state *p)
     return -1;
   }
   scope->mrb = mrb;
-  if (p->filename) {
-    scope->filename = p->filename;
+  scope->parser = p;
+  scope->filename = p->filename;
+  scope->filename_index = p->current_filename_index;
+  if (setjmp(scope->jmp) == 0) {
+    // prepare irep
+    codegen(scope, p->tree, NOVAL);
+    mrb_pool_close(scope->mpool);
+    return 0;
   }
-  if (setjmp(scope->jmp) != 0) {
+  else {
     return -1;
   }
-  // prepare irep
-  codegen(scope, p->tree, NOVAL);
-  mrb_pool_close(scope->mpool);
-  return 0;
 }
 
 int

@@ -10,6 +10,7 @@
 #include "mruby/class.h"
 #include "mruby/irep.h"
 #include "mruby/variable.h"
+#include "mruby/debug.h"
 
 void mrb_init_heap(mrb_state*);
 void mrb_init_core(mrb_state*);
@@ -21,10 +22,6 @@ inspect_main(mrb_state *mrb, mrb_value mod)
   return mrb_str_new(mrb, "main", 4);
 }
 
-#ifdef MRB_NAN_BOXING
-#include <assert.h>
-#endif
-
 mrb_state*
 mrb_open_allocf(mrb_allocf f, void *ud)
 {
@@ -33,7 +30,7 @@ mrb_open_allocf(mrb_allocf f, void *ud)
   mrb_state *mrb;
 
 #ifdef MRB_NAN_BOXING
-  assert(sizeof(void*) == 4);
+  mrb_assert(sizeof(void*) == 4);
 #endif
 
   mrb = (mrb_state *)(f)(NULL, NULL, sizeof(mrb_state), ud);
@@ -118,6 +115,7 @@ mrb_irep_free(mrb_state *mrb, struct mrb_irep *irep)
   mrb_free(mrb, irep->syms);
   mrb_free(mrb, (void *)irep->filename);
   mrb_free(mrb, irep->lines);
+  mrb_debug_info_free(mrb, irep->debug_info);
   mrb_free(mrb, irep);
 }
 
@@ -192,7 +190,7 @@ mrb_value
 mrb_top_self(mrb_state *mrb)
 {
   if (!mrb->top_self) {
-    mrb->top_self = (struct RObject*)mrb_obj_alloc(mrb, MRB_TT_OBJECT, mrb->object_class);  
+    mrb->top_self = (struct RObject*)mrb_obj_alloc(mrb, MRB_TT_OBJECT, mrb->object_class);
     mrb_define_singleton_method(mrb, mrb->top_self, "inspect", inspect_main, MRB_ARGS_NONE());
     mrb_define_singleton_method(mrb, mrb->top_self, "to_s", inspect_main, MRB_ARGS_NONE());
   }

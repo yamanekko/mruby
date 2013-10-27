@@ -27,12 +27,21 @@ typedef struct segment {
   struct segment *next;
 } segment;
 
+/* Instance variable table structure */
 typedef struct iv_tbl {
   segment *rootseg;
   size_t size;
   size_t last_len;
 } iv_tbl;
 
+/*
+ * Creates the instance variable table.
+ *
+ * Parameters
+ *   mrb
+ * Returns
+ *   the instance variable table.
+ */
 static iv_tbl*
 iv_new(mrb_state *mrb)
 {
@@ -47,6 +56,15 @@ iv_new(mrb_state *mrb)
   return t;
 }
 
+/*
+ * Set the value for the symbol in the instance variable table.
+ *
+ * Parameters
+ *   mrb
+ *   t     the instance variable table to be set in.
+ *   sym   the symbol to be used as the key.
+ *   val   the value to be set.
+ */
 static void
 iv_put(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value val)
 {
@@ -59,7 +77,7 @@ iv_put(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value val)
   while (seg) {
     for (i=0; i<MRB_SEGMENT_SIZE; i++) {
       mrb_sym key = seg->key[i];
-      /* found room in last segment after last_len */
+      /* Found room in last segment after last_len */
       if (!seg->next && i >= t->last_len) {
         seg->key[i] = sym;
         seg->val[i] = val;
@@ -80,7 +98,7 @@ iv_put(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value val)
     seg = seg->next;
   }
 
-  /* not found */
+  /* Not found */
   t->size++;
   if (matched_seg) {
     matched_seg->key[matched_idx] = sym;
@@ -100,9 +118,20 @@ iv_put(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value val)
   else {
     t->rootseg = seg;
   }
-  return;
 }
 
+/*
+ * Get a value for a symbol from the instance the variable table.
+ *
+ * Parameters
+ *   mrb
+ *   t     the variable table to be searched.
+ *   sym   the symbol to be used as the key.
+ *   vp    the value pointer. Recieves the value if the specified symbol contains
+ *         in the instance variable table.
+ * Returns
+ *   true if the specfiyed symbol contains in the instance variable table.
+ */
 static mrb_bool
 iv_get(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value *vp)
 {
@@ -127,6 +156,17 @@ iv_get(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value *vp)
   return FALSE;
 }
 
+/*
+ * Deletes the value for the symbol from the instance variable table.
+ *
+ * Parameters
+ *   t    the variable table to be searched.
+ *   sym  the symbol to be used as the key.
+ *   vp   the value pointer. Recieve the deleted value if the symbol contans
+ *        in the instance varible table.
+ * Returns
+ *   true if the specfied symbol contains in the instance variable table.
+ */
 static mrb_bool
 iv_del(mrb_state *mrb, iv_tbl *t, mrb_sym sym, mrb_value *vp)
 {
@@ -827,7 +867,7 @@ const_get(mrb_state *mrb, struct RClass *base, mrb_sym sym)
   mrb_value v;
   iv_tbl *t;
   mrb_bool retry = 0;
-  mrb_sym cm;
+  mrb_value name;
 
 L_RETRY:
   while (c) {
@@ -843,19 +883,8 @@ L_RETRY:
     retry = 1;
     goto L_RETRY;
   }
-  c = base;
-  cm = mrb_intern2(mrb, "const_missing", 13);
-  while (c) {
-    if (mrb_respond_to(mrb, mrb_obj_value(c), cm)) {
-      mrb_value name = mrb_symbol_value(sym);
-      return mrb_funcall_argv(mrb, mrb_obj_value(c), cm, 1, &name);
-    }
-    c = c->super;
-  }
-  mrb_name_error(mrb, sym, "uninitialized constant %S",
-             mrb_sym2str(mrb, sym));
-  /* not reached */
-  return mrb_nil_value();
+  name = mrb_symbol_value(sym);
+  return mrb_funcall_argv(mrb, mrb_obj_value(base), mrb_intern2(mrb, "const_missing", 13), 1, &name);
 }
 
 mrb_value
@@ -916,7 +945,7 @@ mrb_const_remove(mrb_state *mrb, mrb_value mod, mrb_sym sym)
 void
 mrb_define_const(mrb_state *mrb, struct RClass *mod, const char *name, mrb_value v)
 {
-  mrb_obj_iv_set(mrb, (struct RObject*)mod, mrb_intern(mrb, name), v);
+  mrb_obj_iv_set(mrb, (struct RObject*)mod, mrb_intern_cstr(mrb, name), v);
 }
 
 void
@@ -989,6 +1018,15 @@ mrb_gv_set(mrb_state *mrb, mrb_sym sym, mrb_value v)
     t = mrb->globals;
   }
   iv_put(mrb, t, sym, v);
+}
+
+void
+mrb_gv_remove(mrb_state *mrb, mrb_sym sym)
+{
+  if (!mrb->globals) {
+    return;
+  }
+  iv_del(mrb, mrb->globals, sym, NULL);
 }
 
 static int
