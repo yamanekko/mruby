@@ -14,9 +14,28 @@
 #define TIM_CCR                          (uint16_t)1000
 LIS302DL_InitTypeDef  LIS302DL_InitStruct;
 
+#define MEM_CALCLATION 0	/* 0 no  1 yes */
 
 static mrb_value
 mrb_stm_mems_initialize(mrb_state* mrb, mrb_value self) {
+	return self;
+}
+
+static mrb_value
+mrb_stm_mems_get_base_offset(mrb_state* mrb, mrb_value self) {
+
+	uint8_t buf[6];
+	mrb_value ret[3];
+	mrb_value val;
+
+	LIS302DL_Read(buf, LIS302DL_OUT_X_ADDR, 6);
+	val = mrb_fixnum_value(buf[0]);
+	mrb_iv_set(mrb, self, mrb_intern(mrb, "@x_offset"), val);
+	val = mrb_fixnum_value(buf[2]);
+	mrb_iv_set(mrb, self, mrb_intern(mrb, "@y_offset"), val);
+	val = mrb_fixnum_value(buf[4]);
+	mrb_iv_set(mrb, self, mrb_intern(mrb, "@z_offset"), val);
+
 	return self;
 }
 
@@ -25,14 +44,56 @@ mrb_stm_mems_read(mrb_state* mrb, mrb_value self) {
 
 	uint8_t buf[6];
 	mrb_value ret[3];
+	mrb_value val;
+	mrb_int i;
+	int8_t x;
+	int8_t y;
+	int8_t z;
+
 	LIS302DL_Read(buf, LIS302DL_OUT_X_ADDR, 6);
-	ret[0] = mrb_fixnum_value((mrb_int)buf[0]);
-	ret[1] = mrb_fixnum_value((mrb_int)buf[2]);
-	ret[2] = mrb_fixnum_value((mrb_int)buf[4]);
+
+	x = buf[0];
+	y = buf[2];
+	z = buf[4];
+	ret[0] = mrb_fixnum_value((mrb_int)x);
+	ret[1] = mrb_fixnum_value((mrb_int)y);
+	ret[2] = mrb_fixnum_value((mrb_int)z);
+//		ret[0] = mrb_fixnum_value((mrb_int)buf[0]);
+//		ret[1] = mrb_fixnum_value((mrb_int)buf[2]);
+//		ret[2] = mrb_fixnum_value((mrb_int)buf[4]);
 
 	return mrb_ary_new_from_values(mrb, 3, ret);
 }
 
+static mrb_value
+mrb_stm_mems_read_calc(mrb_state* mrb, mrb_value self) {
+
+	uint8_t buf[6];
+	mrb_value ret[3];
+	mrb_value val;
+	mrb_int i;
+	int8_t offset;
+	int8_t x;
+	int8_t y;
+	int8_t z;
+
+	LIS302DL_Read(buf, LIS302DL_OUT_X_ADDR, 6);
+
+	val= mrb_iv_get(mrb, self, mrb_intern(mrb, "@x_offset"));
+	i= mrb_fixnum(val);
+	offset= (uint8_t)i;
+	x = buf[0] - offset;
+	val= mrb_iv_get(mrb, self, mrb_intern(mrb, "@y_offset"));
+	i= mrb_fixnum(val);
+	offset= (uint8_t)i;
+	y = buf[2] - offset;
+	z = buf[4];
+	ret[0] = mrb_fixnum_value((mrb_int)x);
+	ret[1] = mrb_fixnum_value((mrb_int)y);
+	ret[2] = mrb_fixnum_value((mrb_int)z);
+
+	return mrb_ary_new_from_values(mrb, 3, ret);
+}
 
 static mrb_value
 mrb_stm_mems_set_autoreload(mrb_state* mrb, mrb_value self) {
@@ -139,7 +200,6 @@ mrb_stm_mems_config(mrb_state* mrb, mrb_value self) {
 	    LIS302DL_FilterStruct.HighPassFilter_Interrupt = LIS302DL_HIGHPASSFILTERINTERRUPT_1_2;
 	    LIS302DL_FilterConfig(&LIS302DL_FilterStruct);
 
-
 	    return self;
 }
 
@@ -151,7 +211,9 @@ mrb_mruby_stm_mems_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, stm_mems, "initialize", mrb_stm_mems_initialize, ARGS_NONE());
   mrb_define_method(mrb, stm_mems, "config", mrb_stm_mems_config, ARGS_NONE());
   mrb_define_method(mrb, stm_mems, "read", mrb_stm_mems_read, ARGS_NONE());
+  mrb_define_method(mrb, stm_mems, "readAndCalc", mrb_stm_mems_read_calc, ARGS_NONE());
   mrb_define_method(mrb, stm_mems, "autoreload", mrb_stm_mems_set_autoreload, ARGS_REQ(1));
+  mrb_define_method(mrb, stm_mems, "getBaseOffset", mrb_stm_mems_get_base_offset, ARGS_NONE());
 //  mrb_define_method(mrb, stm_mems, "interval", mrb_stm_mems_interval, ARGS_REQ(1));
 
 
