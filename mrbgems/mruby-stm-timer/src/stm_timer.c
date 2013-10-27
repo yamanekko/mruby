@@ -30,6 +30,9 @@ mrb_stm_timer_check(mrb_state *mrb, mrb_value self)
 	case 2:
 		TIMx = TIM2;
 		break;
+	case 3:
+		TIMx = TIM3;
+		break;
 	case 4:
 		TIMx = TIM4;
 		break;
@@ -56,6 +59,9 @@ mrb_stm_timer_restart(mrb_state *mrb, mrb_value self)
 	case 2:
 		TIMx = TIM2;
 		break;
+	case 3:
+		TIMx = TIM3;
+		break;
 	case 4:
 		TIMx = TIM4;
 		break;
@@ -76,6 +82,9 @@ mrb_stm_timer_stop(mrb_state *mrb, mrb_value self)
 	switch(no){
 	case 2:
 		TIMx = TIM2;
+		break;
+	case 3:
+		TIMx = TIM3;
 		break;
 	case 4:
 		TIMx = TIM4;
@@ -106,6 +115,9 @@ mrb_stm_timer_set(mrb_state* mrb, mrb_value self) {
 	case 2:
 		TIMx = TIM2;
 		break;
+	case 3:
+		TIMx = TIM3;
+		break;
 	case 4:
 		TIMx = TIM4;
 		break;
@@ -118,6 +130,9 @@ mrb_stm_timer_set(mrb_state* mrb, mrb_value self) {
 	switch(no){
 	case 2:
 		NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+		break;
+	case 3:
+		NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
 		break;
 	case 4:
 		NVIC_InitStructure.NVIC_IRQChannel = TIM4_IRQn;
@@ -133,6 +148,9 @@ mrb_stm_timer_set(mrb_state* mrb, mrb_value self) {
 	switch(no){
 	case 2:
 		  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+		break;
+	case 3:
+		  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
 		break;
 	case 4:
 		  RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
