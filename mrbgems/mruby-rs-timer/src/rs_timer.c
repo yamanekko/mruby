@@ -60,6 +60,10 @@ mrb_rs_timer_set(mrb_state* mrb, mrb_value self) {
 	  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
 	  NVIC_Init(&NVIC_InitStructure);
 */
+
+    PUT32(IRQ_DISABLE_BASIC,1);	//いる？
+
+
     PUT32(ARM_TIMER_CTL,0x003E0000);
     //初期化時に使うタイマーの周期
     PUT32(ARM_TIMER_LOD,1000-1);
@@ -142,6 +146,8 @@ mrb_mruby_rs_timer_gem_init(mrb_state* mrb) {
   mrb_define_method(mrb, rs_timer, "enable", mrb_rs_timer_set, ARGS_NONE());
   mrb_define_method(mrb, rs_timer, "initialize", mrb_rs_timer_initialize, ARGS_REQ(1));
   mrb_define_method(mrb, rs_timer, "interval", mrb_rs_timter_interval, ARGS_REQ(1));
+
+  PUT32(IRQ_DISABLE_BASIC,1);	//いる？
 
 }
 
